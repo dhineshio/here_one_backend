@@ -19,10 +19,19 @@ from django.urls import path
 from django.conf import settings
 from django.conf.urls.static import static
 from hero_one_api.views import auth_api
+from ninja import NinjaAPI
+
+# Create main API instance
+api = NinjaAPI(title="Hero One API", version="1.0.0")
+
+# Import and add routers
+from hero_one_api.views.client_views import client_router
+api.add_router("/clients", client_router)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/auth/', auth_api.urls),
+    path('api/', api.urls),
 ]
 
 

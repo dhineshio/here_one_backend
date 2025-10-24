@@ -1,5 +1,6 @@
 from ninja import Schema
-from typing import Optional
+from typing import Optional, List
+from datetime import datetime
 
 # Common Schemas
 class ErrorResponseSchema(Schema):
@@ -78,5 +79,30 @@ class OAuthSigninResponseSchema(Schema):
     success: bool
     access_token: str
     refresh_token: str
+
+# Client Schemas
+class ClientResponseSchema(Schema):
+    id: int
+    client_name: str
+    contact_person: str
+    contact_email: str
+    contact_phone: Optional[str] = None
+    industry_type: str
+    brand_logo: Optional[str] = None
+    facebook_url: Optional[str] = None
+    instagram_url: Optional[str] = None
+    youtube_url: Optional[str] = None
+    linkedin_url: Optional[str] = None
+    twitter_url: Optional[str] = None
+    tiktok_url: Optional[str] = None
+    preferred_post_time: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+class ClientListResponseSchema(Schema):
+    success: bool
+    message: str
+    data: List[ClientResponseSchema]
+    count: int
 
 

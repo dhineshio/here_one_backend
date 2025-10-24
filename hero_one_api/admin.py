@@ -3,7 +3,7 @@ from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
 from datetime import timedelta
-from .models import User, OTPVerification
+from .models import User, OTPVerification, Client
 
 # Register your models here.
 class HeroOneAdmin(admin.AdminSite):
@@ -365,4 +365,171 @@ class DefaultUserAdmin(UserAdmin):
 @admin.register(OTPVerification)
 class DefaultOTPVerificationAdmin(OTPVerificationAdmin):
     """Default admin registration for OTPVerification"""
+    pass
+
+
+@admin.register(Client, site=admin_site)
+class ClientAdmin(admin.ModelAdmin):
+    """Admin interface for Client model"""
+    
+    # Fields to display in the list
+    list_display = (
+        'id',
+        'client_name',
+        'user_email',
+        'industry_type',
+        'contact_person',
+        'contact_email',
+        'contact_phone',
+        'social_accounts_count',
+        'created_at',
+        'updated_at'
+    )
+    
+    # Fields to filter by
+    list_filter = (
+        'industry_type',
+        'created_at',
+        'updated_at'
+    )
+    
+    # Fields to search by
+    search_fields = (
+        'client_name',
+        'contact_person',
+        'contact_email',
+        'contact_phone',
+        'user__email',
+        'user__full_name'
+    )
+    
+    # Default ordering (newest first)
+    ordering = ('-created_at',)
+    
+    # Read-only fields
+    readonly_fields = ('id', 'created_at', 'updated_at', 'social_accounts_summary')
+    
+    # Fieldsets for the client detail/edit page
+    fieldsets = (
+        (_('Basic Information'), {
+            'fields': (
+                'id',
+                'user',
+                'client_name',
+                'brand_logo',
+                'industry_type'
+            )
+        }),
+        (_('Contact Information'), {
+            'fields': (
+                'contact_person',
+                'contact_email',
+                'contact_phone'
+            )
+        }),
+        (_('Social Media Accounts'), {
+            'fields': (
+                'facebook_url',
+                'instagram_url',
+                'youtube_url',
+                'linkedin_url',
+                'twitter_url',
+                'tiktok_url',
+                'social_accounts_summary'
+            ),
+            'classes': ('wide',),
+        }),
+        (_('Preferences'), {
+            'fields': (
+                'preferred_post_time',
+            )
+        }),
+        (_('Timestamps'), {
+            'fields': (
+                'created_at',
+                'updated_at'
+            ),
+            'classes': ('collapse',),
+        }),
+    )
+    
+    # Fieldsets for adding a new client
+    add_fieldsets = (
+        (_('Basic Information'), {
+            'classes': ('wide',),
+            'fields': (
+                'user',
+                'client_name',
+                'brand_logo',
+                'industry_type'
+            ),
+        }),
+        (_('Contact Information'), {
+            'classes': ('wide',),
+            'fields': (
+                'contact_person',
+                'contact_email',
+                'contact_phone'
+            ),
+        }),
+    )
+    
+    def user_email(self, obj):
+        """Display user email in the list"""
+        return obj.user.email
+    user_email.short_description = 'User Email'
+    user_email.admin_order_field = 'user__email'
+    
+    def social_accounts_count(self, obj):
+        """Display count of connected social accounts"""
+        count = len(obj.get_active_social_accounts())
+        if count > 0:
+            platforms = ', '.join(obj.get_active_social_accounts())
+            return f"🔗 {count} ({platforms})"
+        return "—"
+    social_accounts_count.short_description = 'Social Accounts'
+    
+    def social_accounts_summary(self, obj):
+        """Display detailed social accounts summary"""
+        active = obj.get_active_social_accounts()
+        if not active:
+            return "No social accounts connected"
+        
+        summary = []
+        for platform in active:
+            summary.append(f"✓ {platform.title()}")
+        
+        return ", ".join(summary)
+    social_accounts_summary.short_description = 'Connected Platforms'
+    
+    def get_queryset(self, request):
+        """Optimize queryset with select_related"""
+        return super().get_queryset(request).select_related('user')
+    
+    # Admin Actions
+    actions = ['export_client_data', 'clear_social_accounts']
+    
+    def export_client_data(self, request, queryset):
+        """Export selected clients data (placeholder for future implementation)"""
+        count = queryset.count()
+        self.message_user(request, f'Export functionality will export {count} client(s).')
+    export_client_data.short_description = "Export client data"
+    
+    def clear_social_accounts(self, request, queryset):
+        """Clear all social media accounts for selected clients"""
+        updated = queryset.update(
+            facebook_url=None,
+            instagram_url=None,
+            youtube_url=None,
+            linkedin_url=None,
+            twitter_url=None,
+            tiktok_url=None
+        )
+        self.message_user(request, f'Cleared social accounts for {updated} client(s).')
+    clear_social_accounts.short_description = "Clear all social accounts"
+
+
+@admin.register(Client)
+class DefaultClientAdmin(ClientAdmin):
+    """Default admin registration for Client"""
     pass

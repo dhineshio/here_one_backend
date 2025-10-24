@@ -22,6 +22,7 @@ from ..schemas import (
     OAuthSigninResponseSchema,
 )
 from ..models import OTPVerification
+from ..models.client_models import Client
 
 User = get_user_model()
 
@@ -103,10 +104,21 @@ def verify_registration_otp(request, data: RegistrationVerificationRequestSchema
             }
         
         # Registration OTP verified successfully - complete registration
-        # Mark user as verified
-        user.is_verified = True
-        user.last_login = timezone.now()
-        user.save(update_fields=['is_verified', 'last_login'])
+        with transaction.atomic():
+            # Mark user as verified
+            user.is_verified = True
+            user.last_login = timezone.now()
+            user.save(update_fields=['is_verified', 'last_login'])
+            
+            # Create "Self as Client" automatically
+            Client.objects.create(
+                user=user,
+                client_name=user.full_name,
+                contact_person=user.full_name,
+                contact_email=user.email,
+                contact_phone=user.phone_number if user.phone_number else '',
+                industry_type='other'
+            )
         
         # Generate JWT tokens for the newly registered user
         refresh = RefreshToken.for_user(user)
@@ -415,6 +427,16 @@ def oauth_signin(request, data: OAuthSigninRequestSchema):
                     oauth_id=data.oauth_id,
                     oauth_access_token=data.access_token,
                     is_verified=True,  # OAuth users are automatically verified
+                )
+                
+                # Create "Self as Client" automatically for new OAuth users
+                Client.objects.create(
+                    user=user,
+                    client_name=user.full_name,
+                    contact_person=user.full_name,
+                    contact_email=user.email,
+                    contact_phone='',
+                    industry_type='other'
                 )
                 
                 # Update profile picture if provided

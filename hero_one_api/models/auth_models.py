@@ -31,9 +31,12 @@ class CustomUserManager(BaseUserManager):
         return user
     
     def create_superuser(self, email, password=None, **extra_fields):
+        from django.db import transaction
+        
         extra_fields.setdefault('is_staff', True)
         extra_fields.setdefault('is_superuser', True)
         extra_fields.setdefault('is_active', True)
+        extra_fields.setdefault('is_verified', True)  # Superusers are always verified
         
         # Set default values for required fields if not provided
         extra_fields.setdefault('full_name', 'Admin')
@@ -43,7 +46,23 @@ class CustomUserManager(BaseUserManager):
         if extra_fields.get('is_superuser') is not True:
             raise ValueError('Superuser must have is_superuser=True.')
         
-        return self.create_user(email, password, **extra_fields)
+        with transaction.atomic():
+            user = self.create_user(email, password, **extra_fields)
+            
+            # Import Client model here to avoid circular imports
+            from .client_models import Client
+            
+            # Create "Self as Client" for superuser
+            Client.objects.create(
+                user=user,
+                client_name=user.full_name,
+                contact_person=user.full_name,
+                contact_email=user.email,
+                contact_phone=user.phone_number if user.phone_number else '',
+                industry_type='other'
+            )
+        
+        return user
 
 
 class User(AbstractBaseUser, PermissionsMixin):
