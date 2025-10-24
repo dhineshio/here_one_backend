@@ -36,8 +36,7 @@ class CustomUserManager(BaseUserManager):
         extra_fields.setdefault('is_active', True)
         
         # Set default values for required fields if not provided
-        extra_fields.setdefault('first_name', 'Admin')
-        extra_fields.setdefault('last_name', 'User')
+        extra_fields.setdefault('full_name', 'Admin')
         
         if extra_fields.get('is_staff') is not True:
             raise ValueError('Superuser must have is_staff=True.')
@@ -52,14 +51,8 @@ class User(AbstractBaseUser, PermissionsMixin):
     Custom User model with email as the primary authentication field
     """
     
-    USER_TYPE_CHOICES = [
-        ('freelancer', 'Freelancer'),
-        ('startup', 'Startup'),
-    ]
-    
     # Basic Information
-    first_name = models.CharField(max_length=30, blank=False)
-    last_name = models.CharField(max_length=30, blank=False)
+    full_name = models.CharField(max_length=60, blank=False)
     email = models.EmailField(
         unique=True,
         validators=[EmailValidator()],
@@ -77,24 +70,32 @@ class User(AbstractBaseUser, PermissionsMixin):
         help_text='Auto-generated from email address'
     )
     
-    # User Type and Related Fields
-    user_type = models.CharField(
-        max_length=20,
-        choices=USER_TYPE_CHOICES,
-        default='freelancer'
-    )
-    team_members_count = models.PositiveIntegerField(
-        null=True,
-        blank=True,
-        help_text='Number of team members (required for startups)'
-    )
-    
     # Profile Information
     profile_pic = models.ImageField(
         upload_to='profile_pics/',
         null=True,
         blank=True,
         help_text='User profile picture'
+    )
+    
+    # OAuth Information
+    oauth_provider = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        help_text='OAuth provider (e.g., google, facebook, github)'
+    )
+    oauth_id = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        unique=True,
+        help_text='Unique ID from OAuth provider'
+    )
+    oauth_access_token = models.TextField(
+        blank=True,
+        null=True,
+        help_text='OAuth access token (encrypted in production)'
     )
     
     # Django required fields
@@ -114,15 +115,15 @@ class User(AbstractBaseUser, PermissionsMixin):
         verbose_name_plural = 'Users'
     
     def __str__(self):
-        return f"{self.first_name} {self.last_name} ({self.email})"
+        return f"{self.full_name} ({self.email})"
     
     def get_full_name(self):
         """Return the full name for the user."""
-        return f"{self.first_name} {self.last_name}".strip()
+        return f"{self.full_name}".strip()
     
     def get_short_name(self):
         """Return the short name for the user."""
-        return self.first_name
+        return self.full_name
     
     def save(self, *args, **kwargs):
         # Auto-generate username from email if not provided
@@ -137,12 +138,6 @@ class User(AbstractBaseUser, PermissionsMixin):
                 counter += 1
             
             self.username = username
-        
-        # Validate team_members_count for startups
-        if self.user_type == 'startup' and self.team_members_count is None:
-            raise ValueError('Team members count is required for startup users')
-        elif self.user_type == 'freelancer':
-            self.team_members_count = None
         
         super().save(*args, **kwargs)
 

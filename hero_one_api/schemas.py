@@ -8,13 +8,10 @@ class ErrorResponseSchema(Schema):
 
 # Registration Schemas
 class RegistrationRequestSchema(Schema):
-    first_name: str
-    last_name: str
+    full_name: str
     email: str
     password: str
     phone_number: Optional[str] = None
-    user_type: str = "freelancer"  # Default to freelancer
-    team_members_count: Optional[int] = None
 
 class RegistrationResponseSchema(Schema):
     success: bool
@@ -67,5 +64,19 @@ class PasswordResetVerificationSchema(Schema):
 class PasswordResetResponseSchema(Schema):
     success: bool
     message: str
+
+# OAuth Signin Schema
+class OAuthSigninRequestSchema(Schema):
+    provider: str
+    email: str
+    full_name: str
+    image: Optional[str] = None
+    oauth_id: str
+    access_token: str
+
+class OAuthSigninResponseSchema(Schema):
+    success: bool
+    access_token: str
+    refresh_token: str
 
 

@@ -18,6 +18,8 @@ from ..schemas import (
     PasswordResetVerificationSchema,
     TokenResponseSchema,
     PasswordResetResponseSchema,
+    OAuthSigninRequestSchema,
+    OAuthSigninResponseSchema,
 )
 from ..models import OTPVerification
 
@@ -28,21 +30,7 @@ auth_api = NinjaAPI(version="1.0.0", title="Authentication API", urls_namespace=
 
 @auth_api.post("/register", response={201: RegistrationResponseSchema, 400: ErrorResponseSchema})
 def register_user(request, data: RegistrationRequestSchema):
-    try:
-        # Validate user_type
-        if data.user_type not in ['freelancer', 'startup']:
-            return 400, {
-                "success": False,
-                "message": "Invalid user type. Must be either 'freelancer' or 'startup'"
-            }
-        
-        # Validate team_members_count for startups
-        if data.user_type == 'startup' and data.team_members_count is None:
-            return 400, {
-                "success": False,
-                "message": "Team members count is required for startup users"
-            }
-        
+    try:   
         # Check if verified user already exists
         existing_verified_user = User.objects.filter(email=data.email, is_verified=True).first()
         if existing_verified_user:
@@ -63,12 +51,9 @@ def register_user(request, data: RegistrationRequestSchema):
             user = User.objects.create_user(
                 email=data.email,
                 password=data.password,
-                first_name=data.first_name,
-                last_name=data.last_name,
+                full_name=data.full_name,
                 phone_number=data.phone_number,
-                user_type=data.user_type,
-                team_members_count=data.team_members_count if data.user_type == 'startup' else None,
-                is_verified=False  # Explicitly set as unverified
+                is_verified=False
             )
             
             # Generate OTP for registration
@@ -385,4 +370,89 @@ def verify_password_reset_otp(request, data: PasswordResetVerificationSchema):
         return 400, {
             "success": False,
             "message": f"Password reset verification failed: {str(e)}"
+        }
+
+@auth_api.post("/oauth-signin", response={200: OAuthSigninResponseSchema, 400: ErrorResponseSchema})
+def oauth_signin(request, data: OAuthSigninRequestSchema):
+    """
+    OAuth signin endpoint that handles authentication via OAuth providers (Google, Facebook, etc.)
+    
+    Logic:
+    1. Check if user exists by email or oauth_id
+    2. If new user, create account with OAuth details
+    3. If existing user, update last login and OAuth info
+    4. Generate and return JWT tokens
+    """
+    try:
+        user = None
+        
+        # Try to find user by oauth_id first (most reliable for OAuth users)
+        if data.oauth_id:
+            try:
+                user = User.objects.get(oauth_id=data.oauth_id)
+            except User.DoesNotExist:
+                pass
+        
+        # If not found by oauth_id, try by email
+        if not user and data.email:
+            try:
+                user = User.objects.get(email=data.email)
+            except User.DoesNotExist:
+                pass
+        
+        # Create new user if doesn't exist
+        if not user:
+            with transaction.atomic():
+                # Generate a random password for OAuth users (they won't use it)
+                import secrets
+                random_password = secrets.token_urlsafe(32)
+                
+                user = User.objects.create_user(
+                    email=data.email,
+                    password=random_password,
+                    full_name=data.full_name,
+                    oauth_provider=data.provider,
+                    oauth_id=data.oauth_id,
+                    oauth_access_token=data.access_token,
+                    is_verified=True,  # OAuth users are automatically verified
+                )
+                
+                # Update profile picture if provided
+                if data.image:
+                    # Note: In production, you might want to download and save the image
+                    # For now, we'll just store the URL in a custom field or skip it
+                    pass
+        else:
+            # Update existing user's OAuth info and last login
+            user.oauth_provider = data.provider
+            user.oauth_id = data.oauth_id
+            user.oauth_access_token = data.access_token
+            user.last_login = timezone.now()
+            
+            # If user wasn't verified before, mark as verified (OAuth verification)
+            if not user.is_verified:
+                user.is_verified = True
+            
+            # Update full name if it changed
+            if data.full_name and data.full_name != user.full_name:
+                user.full_name = data.full_name
+            
+            user.save(update_fields=['oauth_provider', 'oauth_id', 'oauth_access_token', 
+                                     'last_login', 'is_verified', 'full_name'])
+        
+        # Generate JWT tokens
+        refresh = RefreshToken.for_user(user)
+        access_token = str(refresh.access_token)
+        refresh_token = str(refresh)
+        
+        return 200, {
+            "success": True,
+            "access_token": access_token,
+            "refresh_token": refresh_token
+        }
+        
+    except Exception as e:
+        return 400, {
+            "success": False,
+            "message": f"OAuth signin failed: {str(e)}"
         }

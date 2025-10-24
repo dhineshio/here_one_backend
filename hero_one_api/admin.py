@@ -19,8 +19,6 @@ class HeroOneAdmin(admin.AdminSite):
         total_users = User.objects.count()
         verified_users = User.objects.filter(is_verified=True).count()
         unverified_users = User.objects.filter(is_verified=False).count()
-        freelancers = User.objects.filter(user_type='freelancer').count()
-        startups = User.objects.filter(user_type='startup').count()
         
         # OTP statistics
         total_otps = OTPVerification.objects.count()
@@ -67,11 +65,9 @@ class UserAdmin(BaseUserAdmin):
     list_display = (
         'email', 
         'username', 
-        'first_name', 
-        'last_name', 
+        'full_name', 
         'phone_number',
-        'user_type', 
-        'team_members_count',
+        'oauth_provider',
         'is_verified',
         'verification_status_display',
         'is_active', 
@@ -82,8 +78,8 @@ class UserAdmin(BaseUserAdmin):
     
     # Fields to filter by
     list_filter = (
-        'user_type',
         'is_verified',
+        'oauth_provider',
         'is_staff', 
         'is_superuser', 
         'is_active', 
@@ -91,7 +87,7 @@ class UserAdmin(BaseUserAdmin):
     )
     
     # Fields to search by
-    search_fields = ('email', 'username', 'first_name', 'last_name', 'phone_number')
+    search_fields = ('email', 'username', 'full_name', 'phone_number')
     
     # Default ordering
     ordering = ('email',)
@@ -106,19 +102,19 @@ class UserAdmin(BaseUserAdmin):
         }),
         (_('Personal info'), {
             'fields': (
-                'first_name', 
-                'last_name', 
+                'full_name', 
                 'phone_number',
                 'username',
                 'profile_pic'
             )
         }),
-        (_('User Type & Details'), {
+        (_('OAuth Information'), {
             'fields': (
-                'user_type', 
-                'team_members_count'
+                'oauth_provider',
+                'oauth_id',
+                'oauth_access_token'
             ),
-            'description': 'Team members count is required for startup users'
+            'classes': ('collapse',),  # Make it collapsible
         }),
         (_('Verification & Permissions'), {
             'fields': (
@@ -143,11 +139,7 @@ class UserAdmin(BaseUserAdmin):
         }),
         (_('Personal Information'), {
             'classes': ('wide',),
-            'fields': ('first_name', 'last_name', 'phone_number'),
-        }),
-        (_('User Type'), {
-            'classes': ('wide',),
-            'fields': ('user_type', 'team_members_count'),
+            'fields': ('full_name', 'phone_number'),
         }),
     )
     
@@ -239,10 +231,6 @@ class UserAdmin(BaseUserAdmin):
         """
         Override to handle custom validation
         """
-        # Auto-clear team_members_count for freelancers
-        if obj.user_type == 'freelancer':
-            obj.team_members_count = None
-        
         super().save_model(request, obj, form, change)
 
 
@@ -273,7 +261,7 @@ class OTPVerificationAdmin(admin.ModelAdmin):
     )
     
     # Fields to search by
-    search_fields = ('user__email', 'user__first_name', 'user__last_name', 'otp_code')
+    search_fields = ('user__email', 'user__full_name', 'otp_code')
     
     # Default ordering (newest first)
     ordering = ('-created_at',)
