@@ -5,10 +5,12 @@ django-cors-headers==4.9.0
 django-ninja==1.4.3
 djangorestframework==3.16.1
 djangorestframework_simplejwt==5.5.1
+openai==1.58.1
 pillow==11.3.0
 pydantic==2.12.1
 pydantic_core==2.41.3
 PyJWT==2.10.1
+python-dotenv==1.2.1
 sqlparse==0.5.3
 typing-inspection==0.4.2
 typing_extensions==4.15.0
