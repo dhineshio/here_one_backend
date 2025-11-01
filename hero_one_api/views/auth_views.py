@@ -23,6 +23,7 @@ from ..schemas import (
 )
 from ..models import OTPVerification
 from ..models.client_models import Client
+from ..services.email_service import EmailService
 
 User = get_user_model()
 
@@ -59,6 +60,14 @@ def register_user(request, data: RegistrationRequestSchema):
             
             # Generate OTP for registration
             otp = OTPVerification.generate_otp(user, otp_type='registration')
+            
+            # Send OTP via email (async/background - non-blocking)
+            EmailService.send_otp_email_background(
+                email=user.email,
+                otp_code=otp.otp_code,
+                otp_type='registration',
+                full_name=user.full_name
+            )
         
         # Return success response with OTP notification
         return 201, {
@@ -178,6 +187,14 @@ def signin_user(request, data: SigninRequestSchema):
         
         # Generate OTP for signin (every login requires OTP)
         otp = OTPVerification.generate_otp(user, otp_type='signin')
+        
+        # Send OTP via email (async/background - non-blocking)
+        EmailService.send_otp_email_background(
+            email=user.email,
+            otp_code=otp.otp_code,
+            otp_type='signin',
+            full_name=user.full_name
+        )
 
         return 200, {
             "success": True,
@@ -284,8 +301,13 @@ def request_otp(request, data: OTPRequestSchema):
         # Generate OTP
         otp = OTPVerification.generate_otp(user, otp_type=data.otp_type)
         
-        # TODO: Send OTP via email service
-        # For now, just return success (in production, integrate with email service)
+        # Send OTP via email service (async/background - non-blocking)
+        EmailService.send_otp_email_background(
+            email=user.email,
+            otp_code=otp.otp_code,
+            otp_type=data.otp_type,
+            full_name=user.full_name
+        )
         
         return 200, {
             "success": True,
@@ -327,8 +349,13 @@ def request_password_reset(request, data: PasswordResetRequestSchema):
         # Generate OTP for password reset
         otp = OTPVerification.generate_otp(user, otp_type='password_reset')
         
-        # TODO: Send OTP via email service
-        # For now, just return success (in production, integrate with email service)
+        # Send OTP via email service (async/background - non-blocking)
+        EmailService.send_otp_email_background(
+            email=user.email,
+            otp_code=otp.otp_code,
+            otp_type='password_reset',
+            full_name=user.full_name
+        )
         
         return 200, {
             "success": True,
@@ -373,6 +400,12 @@ def verify_password_reset_otp(request, data: PasswordResetVerificationSchema):
         user.set_password(data.new_password)
         user.save(update_fields=['password'])
         
+        # Send password reset success email (async/background - non-blocking)
+        EmailService.send_password_reset_success_email_background(
+            email=user.email,
+            full_name=user.full_name
+        )
+        
         return 200, {
             "success": True,
             "message": "Password reset successful. You can now sign in with your new password."
@@ -386,15 +419,6 @@ def verify_password_reset_otp(request, data: PasswordResetVerificationSchema):
 
 @auth_api.post("/oauth-signin", response={200: OAuthSigninResponseSchema, 400: ErrorResponseSchema})
 def oauth_signin(request, data: OAuthSigninRequestSchema):
-    """
-    OAuth signin endpoint that handles authentication via OAuth providers (Google, Facebook, etc.)
-    
-    Logic:
-    1. Check if user exists by email or oauth_id
-    2. If new user, create account with OAuth details
-    3. If existing user, update last login and OAuth info
-    4. Generate and return JWT tokens
-    """
     try:
         user = None
         

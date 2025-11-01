@@ -52,7 +52,6 @@ class HeroOneAdmin(admin.AdminSite):
         })
         
         return super().index(request, extra_context)
-
     
 admin_site = HeroOneAdmin(name='admin')
 
@@ -234,137 +233,10 @@ class UserAdmin(BaseUserAdmin):
         super().save_model(request, obj, form, change)
 
 
-@admin.register(OTPVerification, site=admin_site)
-class OTPVerificationAdmin(admin.ModelAdmin):
-    """Admin interface for OTP Verification"""
-    
-    # Fields to display in the list
-    list_display = (
-        'user_email',
-        'user_verification_status',
-        'otp_code',
-        'otp_type',
-        'created_at',
-        'time_remaining',
-        'is_used',
-        'is_active',
-        'status_display'
-    )
-    
-    # Fields to filter by
-    list_filter = (
-        'otp_type',
-        'is_used',
-        'is_active',
-        'created_at',
-        'expires_at'
-    )
-    
-    # Fields to search by
-    search_fields = ('user__email', 'user__full_name', 'otp_code')
-    
-    # Default ordering (newest first)
-    ordering = ('-created_at',)
-    
-    # Read-only fields
-    readonly_fields = ('created_at', 'expires_at', 'time_remaining', 'status_display')
-    
-    # Fields for the detail/edit page
-    fields = (
-        'user',
-        'otp_code',
-        'otp_type',
-        'created_at',
-        'expires_at',
-        'time_remaining',
-        'is_used',
-        'is_active',
-        'status_display'
-    )
-    
-    def user_email(self, obj):
-        """Display user email in the list"""
-        return obj.user.email
-    user_email.short_description = 'User Email'
-    user_email.admin_order_field = 'user__email'
-    
-    def user_verification_status(self, obj):
-        """Display user verification status"""
-        if obj.user.is_verified:
-            return "✅ Verified"
-        else:
-            return "❌ Unverified"
-    user_verification_status.short_description = 'User Status'
-    user_verification_status.admin_order_field = 'user__is_verified'
-    
-    def time_remaining(self, obj):
-        """Display time remaining for OTP"""
-        now = timezone.now()
-        if obj.expires_at > now:
-            delta = obj.expires_at - now
-            minutes = int(delta.total_seconds() / 60)
-            seconds = int(delta.total_seconds() % 60)
-            return f"{minutes}m {seconds}s"
-        else:
-            return "⏰ Expired"
-    time_remaining.short_description = 'Time Left'
-    
-    def status_display(self, obj):
-        """Comprehensive status display"""
-        if obj.is_used:
-            return "✅ Used"
-        elif timezone.now() > obj.expires_at:
-            return "⏰ Expired"
-        elif obj.is_active:
-            return "🟢 Active"
-        else:
-            return "🔴 Inactive"
-    status_display.short_description = 'Status'
-    
-    # Admin Actions
-    actions = ['cleanup_expired_otps', 'deactivate_otps', 'delete_used_otps']
-    
-    def cleanup_expired_otps(self, request, queryset):
-        """Clean up expired OTPs"""
-        expired_otps = queryset.filter(expires_at__lt=timezone.now())
-        count = expired_otps.count()
-        expired_otps.delete()
-        self.message_user(request, f'Cleaned up {count} expired OTP(s).')
-    cleanup_expired_otps.short_description = "Delete expired OTPs"
-    
-    def deactivate_otps(self, request, queryset):
-        """Deactivate selected OTPs"""
-        updated = queryset.update(is_active=False)
-        self.message_user(request, f'Deactivated {updated} OTP(s).')
-    deactivate_otps.short_description = "Deactivate selected OTPs"
-    
-    def delete_used_otps(self, request, queryset):
-        """Delete used OTPs"""
-        used_otps = queryset.filter(is_used=True)
-        count = used_otps.count()
-        used_otps.delete()
-        self.message_user(request, f'Deleted {count} used OTP(s).')
-    delete_used_otps.short_description = "Delete used OTPs"
-    
-    def get_queryset(self, request):
-        """Optimize queryset with select_related"""
-        return super().get_queryset(request).select_related('user')
-    
-    def has_add_permission(self, request):
-        """Disable adding OTPs through admin (should be generated programmatically)"""
-        return False
-
-
 # Also register with default admin for backward compatibility
 @admin.register(User)
 class DefaultUserAdmin(UserAdmin):
     """Default admin registration for User"""
-    pass
-
-
-@admin.register(OTPVerification)
-class DefaultOTPVerificationAdmin(OTPVerificationAdmin):
-    """Default admin registration for OTPVerification"""
     pass
 
 
