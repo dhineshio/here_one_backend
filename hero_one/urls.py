@@ -22,7 +22,7 @@ from hero_one_api.views import auth_api
 from ninja import NinjaAPI
 
 # Create main API instance
-api = NinjaAPI(title="Hero One API", version="1.0.0")
+api = NinjaAPI(title="CreatorScribe API", version="1.0.0")
 
 # Import and add routers
 from hero_one_api.views.client_views import client_router
@@ -35,8 +35,6 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/auth/', auth_api.urls),
     path('api/', api.urls),
-    # path('api/audio/', audio_api.urls),
-    # path('api/transcribe/', transcribe_api.urls),
 ]
 
 

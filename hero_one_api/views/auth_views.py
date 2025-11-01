@@ -28,7 +28,7 @@ from ..services.email_service import EmailService
 User = get_user_model()
 
 # Initialize Django Ninja API for authentication
-auth_api = NinjaAPI(version="1.0.0", title="Authentication API", urls_namespace="auth")
+auth_api = NinjaAPI(version="1.0.0", title="CreatorScribe Authentication API", urls_namespace="auth")
 
 @auth_api.post("/register", response={201: RegistrationResponseSchema, 400: ErrorResponseSchema})
 def register_user(request, data: RegistrationRequestSchema):
