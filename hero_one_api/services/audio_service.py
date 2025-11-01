@@ -10,10 +10,6 @@ from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger(__name__)
 
-# Thread pool for background audio processing
-audio_executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix='audio_worker')
-
-
 class AudioService:
     """Service class for video to audio conversion"""
     
@@ -93,36 +89,3 @@ class AudioService:
             logger.error(error_msg)
             return False, error_msg
     
-    @staticmethod
-    def video_to_audio_background(
-        video_path: str,
-        output_path: Optional[str] = None,
-        audio_format: str = 'mp3',
-        audio_bitrate: str = '192k',
-        callback: Optional[callable] = None
-    ) -> None:
-        """
-        Convert video to audio in background (fire-and-forget)
-        
-        Args:
-            video_path: Path to input video file
-            output_path: Path to output audio file (optional)
-            audio_format: Output audio format (default: mp3)
-            audio_bitrate: Audio bitrate (default: 192k)
-            callback: Optional callback function(success, result)
-        """
-        def conversion_task():
-            success, result = AudioService.video_to_audio(
-                video_path=video_path,
-                output_path=output_path,
-                audio_format=audio_format,
-                audio_bitrate=audio_bitrate
-            )
-            
-            if callback:
-                callback(success, result)
-            
-            return success, result
-        
-        audio_executor.submit(conversion_task)
-        logger.info(f"Video conversion queued: {video_path}")

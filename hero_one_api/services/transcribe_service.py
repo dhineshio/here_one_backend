@@ -103,76 +103,13 @@ class TranscribeService:
             return f"Error: {str(e)}"
     
     @staticmethod
-    def generate_srt(audio_file_path: str, output_srt_path: str, language: Optional[str] = None) -> str:
-        """
-        Generate SRT subtitle file from audio/video
-        
-        Args:
-            audio_file_path: Path to audio or video file (mp3, mp4, wav, etc.)
-            output_srt_path: Path where to save the SRT file
-            language: Language code like 'en', 'es' (auto-detect if None)
-            
-        Returns:
-            Success message or error string
-        """
-        try:
-            if not os.path.exists(audio_file_path):
-                return f"Error: File not found - {audio_file_path}"
-            
-            # Initialize OpenAI client (uses OPENAI_API_KEY from env)
-            client = OpenAI()
-            
-            # Transcribe with timestamps
-            with open(audio_file_path, 'rb') as audio_file:
-                params = {
-                    'model': 'whisper-1',
-                    'file': audio_file,
-                    'response_format': 'verbose_json',
-                    'timestamp_granularities': ['segment']
-                }
-                
-                if language:
-                    params['language'] = language
-                
-                result = client.audio.transcriptions.create(**params)
-            
-            # Generate SRT content
-            srt_lines = []
-            
-            if hasattr(result, 'segments') and result.segments:
-                for index, segment in enumerate(result.segments, start=1):
-                    # Access segment attributes directly (not as dict)
-                    start = segment.start if hasattr(segment, 'start') else segment.get('start', 0)
-                    end = segment.end if hasattr(segment, 'end') else segment.get('end', 0)
-                    text = segment.text.strip() if hasattr(segment, 'text') else segment.get('text', '').strip()
-                    
-                    # SRT format:
-                    # 1
-                    # 00:00:00,000 --> 00:00:05,000
-                    # Text content
-                    # (blank line)
-                    
-                    srt_lines.append(str(index))
-                    srt_lines.append(f"{TranscribeService.format_srt_timestamp(start)} --> {TranscribeService.format_srt_timestamp(end)}")
-                    srt_lines.append(text)
-                    srt_lines.append("")  # Blank line between subtitles
-            else:
-                # Fallback if no segments
-                return "Error: No segments found in transcription"
-            
-            # Write to SRT file
-            with open(output_srt_path, 'w', encoding='utf-8') as srt_file:
-                srt_file.write("\n".join(srt_lines))
-            
-            logger.info(f"SRT file generated: {output_srt_path}")
-            return f"Success: SRT file saved to {output_srt_path}"
-            
-        except Exception as e:
-            logger.error(f"SRT generation failed: {str(e)}")
-            return f"Error: {str(e)}"
-    
-    @staticmethod
-    def generate_social_media_content(audio_file_path: str, language: Optional[str] = None) -> dict:
+    def generate_social_media_content(
+        audio_file_path: str, 
+        language: Optional[str] = None,
+        caption_length: str = 'medium',
+        description_length: str = 'medium',
+        hashtag_count: int = 15
+    ) -> dict:
         """
         Generate social media content (caption, description, hashtags) from audio/video
         Always translates to English for better social media reach
@@ -180,6 +117,9 @@ class TranscribeService:
         Args:
             audio_file_path: Path to audio or video file
             language: Language code like 'en', 'es' (auto-detect if None)
+            caption_length: 'short' (1 sentence), 'medium' (2 sentences), 'long' (3 sentences)
+            description_length: 'short' (1 paragraph), 'medium' (2-3 paragraphs), 'long' (4-5 paragraphs)
+            hashtag_count: Number of hashtags to generate (5-30, default: 15)
             
         Returns:
             Dict with caption, description, hashtags for Instagram, Facebook, YouTube
@@ -194,6 +134,26 @@ class TranscribeService:
             # Initialize OpenAI client
             client = OpenAI()
             
+            # Define caption length requirements
+            caption_requirements = {
+                'short': '1 sentence (concise and punchy)',
+                'medium': '2 sentences (engaging with hook)',
+                'long': '3 sentences (detailed with strong hook)'
+            }
+            
+            # Define description length requirements
+            description_requirements = {
+                'short': '1 paragraph (brief overview)',
+                'medium': '2-3 paragraphs (detailed explanation)',
+                'long': '4-5 paragraphs (comprehensive and detailed)'
+            }
+            
+            caption_req = caption_requirements.get(caption_length, caption_requirements['medium'])
+            description_req = description_requirements.get(description_length, description_requirements['medium'])
+            
+            # Validate and set hashtag count
+            hashtag_count = max(5, min(30, hashtag_count))  # Ensure between 5 and 30
+            
             # Create prompt for social media content generation
             prompt = f"""Based on this video transcription, generate social media content for Instagram, Facebook, and YouTube:
 
@@ -201,9 +161,9 @@ class TranscribeService:
                 {transcription}
 
                 Please provide:
-                1. A hook-style caption (1-2 sentences, written like a hook that grabs attention and creates curiosity. Use attention-grabbing phrases, emojis, and make people want to watch)
-                2. A detailed description (2-3 paragraphs explaining the video content)
-                3. 10-15 trending hashtags relevant to the content
+                1. A hook-style caption ({caption_req}, written like a hook that grabs attention and creates curiosity. Use attention-grabbing phrases, emojis, and make people want to watch)
+                2. A detailed description ({description_req} explaining the video content)
+                3. Exactly {hashtag_count} trending hashtags relevant to the content
 
                 Format the response as:
 
