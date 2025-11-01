@@ -1,6 +1,3 @@
-"""
-Simple transcription service using OpenAI Whisper API
-"""
 import os
 import logging
 import base64
@@ -10,8 +7,6 @@ from openai import OpenAI
 logger = logging.getLogger(__name__)
 
 class TranscribeService:
-    """Simple service for audio transcription using OpenAI Whisper API"""
-    
     @staticmethod
     def format_srt_timestamp(seconds: float) -> str:
         """

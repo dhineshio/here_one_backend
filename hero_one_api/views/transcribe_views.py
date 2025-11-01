@@ -97,7 +97,10 @@ def upload_and_generate_content(
     try:
         # Check authentication
         if not request.auth:
-            return 401, {"detail": "Authentication required"}
+            return 401, {
+                "success": False,
+                "message": "Authentication required",
+            }
         
         user = request.auth
         
@@ -105,17 +108,21 @@ def upload_and_generate_content(
         try:
             client = Client.objects.get(id=client_id, user=user)
         except Client.DoesNotExist:
-            return 400, {"detail": f"Client with ID {client_id} not found or does not belong to you"}
+            return 400, {
+                "success": False,
+                "message": f"Client with ID {client_id} not found or does not belong to you",
+            }
         
         # Check if user can use credit
         if not user.can_use_credit():
-            return 400, {"detail": "Daily credit limit reached. Please upgrade to premium for unlimited access."}
+            return 400, {"success": False, "message": "Daily credit limit reached. Please upgrade to premium for unlimited access."}
         
         # Validate file type
         file_type = get_file_type(file.name)
         if not file_type:
             return 400, {
-                "detail": f"Unsupported file type. Supported formats: "
+                "success": False,
+                "message": f"Unsupported file type. Supported formats: "
                          f"Audio ({', '.join(AUDIO_EXTENSIONS)}), "
                          f"Video ({', '.join(VIDEO_EXTENSIONS)}), "
                          f"Image ({', '.join(IMAGE_EXTENSIONS)})"
@@ -123,10 +130,10 @@ def upload_and_generate_content(
         
         # Validate parameters
         if caption_length not in ['short', 'medium', 'long']:
-            return 400, {"detail": "caption_length must be 'short', 'medium', or 'long'"}
+            return 400, {"success": False, "message": "caption_length must be 'short', 'medium', or 'long'"}
         
         if description_length not in ['short', 'medium', 'long']:
-            return 400, {"detail": "description_length must be 'short', 'medium', or 'long'"}
+            return 400, {"success": False, "message": "description_length must be 'short', 'medium', or 'long'"}
         
         hashtag_count = max(5, min(30, hashtag_count))
         
@@ -144,7 +151,7 @@ def upload_and_generate_content(
             # Delete uploaded file if credit usage failed
             if os.path.exists(file_path):
                 os.remove(file_path)
-            return 400, {"detail": message}
+            return 400, {"success": False, "message": message}
         
         # Create job
         job = Job.objects.create(
@@ -176,7 +183,7 @@ def upload_and_generate_content(
                 
                 if "error" in result:
                     job.mark_failed(result["error"])
-                    return 400, {"detail": result["error"], "job_id": str(job.job_id)}
+                    return 400, {"success": False, "message": result["error"]}
                 
                 job.mark_completed(result)
                 
@@ -186,8 +193,8 @@ def upload_and_generate_content(
                 success, audio_path_or_error = AudioService.video_to_audio(file_path)
                 
                 if not success:
-                    job.mark_failed(f"Video to audio conversion failed: {audio_path_or_error}")
-                    return 400, {"detail": audio_path_or_error, "job_id": str(job.job_id)}
+                    job.mark_failed(f"Video to audio conversion failed: {audio_path_or_error} {job.job_id}")
+                    return 400, {"success": False, "message": audio_path_or_error}
                 
                 # Save converted audio path
                 job.converted_audio_path = audio_path_or_error
@@ -205,7 +212,7 @@ def upload_and_generate_content(
                 
                 if "error" in result:
                     job.mark_failed(result["error"])
-                    return 400, {"detail": result["error"], "job_id": str(job.job_id)}
+                    return 400, {"success": False, "message": result["error"]}
                 
                 job.mark_completed(result)
                 
@@ -220,7 +227,7 @@ def upload_and_generate_content(
                 
                 if "error" in result:
                     job.mark_failed(result["error"])
-                    return 400, {"detail": result["error"], "job_id": str(job.job_id)}
+                    return 400, {"success": False, "message": result["error"]}
                 
                 job.mark_completed(result)
             
@@ -241,14 +248,14 @@ def upload_and_generate_content(
             error_msg = f"Processing failed: {str(e)}"
             logger.error(f"Job {job.job_id} failed: {error_msg}")
             job.mark_failed(error_msg)
-            return 400, {"detail": error_msg, "job_id": str(job.job_id)}
+            return 400, {"success": False, "message": error_msg, "job_id": str(job.job_id)}
     
     except Exception as e:
         logger.error(f"Upload failed: {str(e)}")
-        return 400, {"detail": f"Upload failed: {str(e)}"}
+        return 400, {"success": False, "message": f"Upload failed: {str(e)}"}
 
 
-@transcribe_router.get("/job/{job_id}", response={200: dict, 404: ErrorResponseSchema, 401: ErrorResponseSchema}, auth=AuthBearer())
+@transcribe_router.get("/job/{job_id}", response={200: dict, 400: ErrorResponseSchema, 404: ErrorResponseSchema, 401: ErrorResponseSchema}, auth=AuthBearer())
 def get_job_status(request, job_id: str):
     """
     Get the status and results of a job
@@ -260,7 +267,7 @@ def get_job_status(request, job_id: str):
     try:
         # Check authentication
         if not request.auth:
-            return 401, {"detail": "Authentication required"}
+            return 401, {"success": False, "message": "Authentication required"}
         
         user = request.auth
         
@@ -268,7 +275,7 @@ def get_job_status(request, job_id: str):
         try:
             job = Job.objects.get(job_id=job_id, user=user)
         except Job.DoesNotExist:
-            return 404, {"detail": "Job not found"}
+            return 404, {"success": False, "message": "Job not found"}
         
         response = {
             "job_id": str(job.job_id),
@@ -292,10 +299,10 @@ def get_job_status(request, job_id: str):
         
     except Exception as e:
         logger.error(f"Get job status failed: {str(e)}")
-        return 400, {"detail": f"Failed to get job status: {str(e)}"}
+        return 400, {"success": False, "message": f"Failed to get job status: {str(e)}"}
 
 
-@transcribe_router.get("/jobs", response={200: dict, 401: ErrorResponseSchema}, auth=AuthBearer())
+@transcribe_router.get("/jobs", response={200: dict, 400: ErrorResponseSchema, 401: ErrorResponseSchema}, auth=AuthBearer())
 def list_user_jobs(request, limit: int = Query(10), offset: int = Query(0), client_id: Optional[int] = Query(None)):
     """
     List all jobs for the authenticated user
@@ -309,7 +316,7 @@ def list_user_jobs(request, limit: int = Query(10), offset: int = Query(0), clie
     try:
         # Check authentication
         if not request.auth:
-            return 401, {"detail": "Authentication required"}
+            return 401, {"success": False, "message": "Authentication required"}
         
         user = request.auth
         
@@ -326,7 +333,7 @@ def list_user_jobs(request, limit: int = Query(10), offset: int = Query(0), clie
                 client = Client.objects.get(id=client_id, user=user)
                 jobs_query = jobs_query.filter(client=client)
             except Client.DoesNotExist:
-                return 400, {"detail": f"Client with ID {client_id} not found or does not belong to you"}
+                return 400, {"success": False, "message": f"Client with ID {client_id} not found or does not belong to you"}
         
         jobs = jobs_query.select_related('client')[offset:offset + limit]
         total_count = jobs_query.count()
@@ -355,4 +362,4 @@ def list_user_jobs(request, limit: int = Query(10), offset: int = Query(0), clie
         
     except Exception as e:
         logger.error(f"List jobs failed: {str(e)}")
-        return 400, {"detail": f"Failed to list jobs: {str(e)}"}
+        return 400, {"success": False, "message": f"Failed to list jobs: {str(e)}"}

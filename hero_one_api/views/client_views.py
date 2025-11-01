@@ -46,7 +46,6 @@ def get_user_clients(request):
         return 401, {
             "success": False,
             "message": "Authentication required",
-            "error": "Invalid or missing authentication token"
         }
     
     # Get all clients for the user
@@ -106,8 +105,7 @@ def get_client_detail(request, client_id: int):
     if not user:
         return 401, {
             "success": False,
-            "message": "Authentication required",
-            "error": "Invalid or missing authentication token"
+            "message": "Invalid or missing authentication token",
         }
     
     # Get client and verify ownership
@@ -116,8 +114,7 @@ def get_client_detail(request, client_id: int):
     except Client.DoesNotExist:
         return 404, {
             "success": False,
-            "message": "Client not found",
-            "error": f"No client found with ID {client_id} for this user"
+            "message": f"No client found with ID {client_id} for this user",
         }
     
     return 200, {
