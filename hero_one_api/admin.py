@@ -3,7 +3,7 @@ from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
 from datetime import timedelta, date
-from .models import User, OTPVerification, Client, CreditUsage
+from .models import User, OTPVerification, Client, CreditUsage, Job
 
 # Register your models here.
 class HeroOneAdmin(admin.AdminSite):
@@ -575,4 +575,207 @@ class CreditUsageAdmin(admin.ModelAdmin):
 @admin.register(CreditUsage)
 class DefaultCreditUsageAdmin(CreditUsageAdmin):
     """Default admin registration for CreditUsage"""
+    pass
+
+
+@admin.register(Job, site=admin_site)
+class JobAdmin(admin.ModelAdmin):
+    """Admin interface for Job model"""
+    
+    # Fields to display in the list
+    list_display = (
+        'job_id',
+        'client_name_display',
+        'user_email',
+        'file_type',
+        'original_filename',
+        'status_display',
+        'created_at',
+        'processing_time_display',
+        'has_results'
+    )
+    
+    # Fields to filter by
+    list_filter = (
+        'status',
+        'file_type',
+        'created_at',
+        'user__subscription_type'
+    )
+    
+    # Fields to search by
+    search_fields = (
+        'job_id',
+        'client__client_name',
+        'user__email',
+        'user__full_name',
+        'original_filename',
+        'error_message'
+    )
+    
+    # Default ordering (newest first)
+    ordering = ('-created_at',)
+    
+    # Read-only fields
+    readonly_fields = (
+        'job_id',
+        'client',
+        'user',
+        'file_type',
+        'original_filename',
+        'file_path',
+        'converted_audio_path',
+        'status',
+        'result_data',
+        'error_message',
+        'created_at',
+        'started_at',
+        'completed_at',
+        'processing_time_display',
+        'result_preview'
+    )
+    
+    # Fieldsets for the detail page
+    fieldsets = (
+        (_('Job Information'), {
+            'fields': (
+                'job_id',
+                'client',
+                'user',
+                'status',
+                'file_type',
+                'original_filename'
+            )
+        }),
+        (_('File Paths'), {
+            'fields': (
+                'file_path',
+                'converted_audio_path'
+            ),
+            'classes': ('collapse',)
+        }),
+        (_('Processing Parameters'), {
+            'fields': (
+                'caption_length',
+                'description_length',
+                'hashtag_count'
+            )
+        }),
+        (_('Results'), {
+            'fields': (
+                'result_preview',
+                'result_data'
+            ),
+            'classes': ('collapse',)
+        }),
+        (_('Error Information'), {
+            'fields': (
+                'error_message',
+            ),
+            'classes': ('collapse',)
+        }),
+        (_('Timestamps'), {
+            'fields': (
+                'created_at',
+                'started_at',
+                'completed_at',
+                'processing_time_display'
+            )
+        })
+    )
+    
+    def client_name_display(self, obj):
+        """Display client name"""
+        return obj.client.client_name
+    client_name_display.short_description = 'Client'
+    client_name_display.admin_order_field = 'client__client_name'
+    
+    def user_email(self, obj):
+        """Display user email"""
+        return obj.user.email
+    user_email.short_description = 'User'
+    user_email.admin_order_field = 'user__email'
+    
+    def status_display(self, obj):
+        """Display status with color coding"""
+        status_icons = {
+            'pending': '⏳',
+            'processing': '⚙️',
+            'completed': '✅',
+            'failed': '❌'
+        }
+        icon = status_icons.get(obj.status, '❓')
+        return f"{icon} {obj.get_status_display()}"
+    status_display.short_description = 'Status'
+    status_display.admin_order_field = 'status'
+    
+    def processing_time_display(self, obj):
+        """Display processing time"""
+        return obj.get_duration_display()
+    processing_time_display.short_description = 'Processing Time'
+    
+    def has_results(self, obj):
+        """Display whether job has results"""
+        if obj.status == 'completed' and obj.result_data:
+            return "✓ Yes"
+        elif obj.status == 'failed':
+            return "❌ Error"
+        return "—"
+    has_results.short_description = 'Results'
+    
+    def result_preview(self, obj):
+        """Display preview of results"""
+        if not obj.result_data:
+            return "No results"
+        
+        try:
+            import json
+            result = obj.result_data
+            preview = []
+            
+            if 'caption' in result:
+                caption = result['caption'][:100]
+                preview.append(f"Caption: {caption}...")
+            
+            if 'hashtags' in result:
+                hashtags = result['hashtags'][:50]
+                preview.append(f"Hashtags: {hashtags}...")
+            
+            return "\n".join(preview) if preview else "Results available"
+        except:
+            return "Results available (error parsing preview)"
+    result_preview.short_description = 'Results Preview'
+    
+    def get_queryset(self, request):
+        """Optimize queryset with select_related"""
+        return super().get_queryset(request).select_related('client', 'user')
+    
+    def has_add_permission(self, request):
+        """Disable manual adding of jobs"""
+        return False
+    
+    def has_change_permission(self, request, obj=None):
+        """Disable editing of jobs"""
+        return False
+    
+    # Admin Actions
+    actions = ['export_job_data', 'retry_failed_jobs']
+    
+    def export_job_data(self, request, queryset):
+        """Export selected job data"""
+        count = queryset.count()
+        self.message_user(request, f'Export functionality will export {count} job(s).')
+    export_job_data.short_description = "Export job data"
+    
+    def retry_failed_jobs(self, request, queryset):
+        """Retry failed jobs (placeholder)"""
+        failed_jobs = queryset.filter(status='failed')
+        count = failed_jobs.count()
+        self.message_user(request, f'Retry functionality will retry {count} failed job(s).')
+    retry_failed_jobs.short_description = "Retry failed jobs"
+
+
+@admin.register(Job)
+class DefaultJobAdmin(JobAdmin):
+    """Default admin registration for Job"""
     pass

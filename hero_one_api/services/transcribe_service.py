@@ -371,7 +371,7 @@ class TranscribeService:
                 hashtags = hashtags_part
             
             result = {
-                "image_analysis": "Image analyzed successfully",
+                "transcription": "",
                 "caption": caption,
                 "description": description,
                 "hashtags": hashtags,
