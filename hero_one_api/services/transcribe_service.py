@@ -3,11 +3,11 @@ Simple transcription service using OpenAI Whisper API
 """
 import os
 import logging
+import base64
 from typing import Optional
 from openai import OpenAI
 
 logger = logging.getLogger(__name__)
-
 
 class TranscribeService:
     """Simple service for audio transcription using OpenAI Whisper API"""
@@ -233,4 +233,166 @@ class TranscribeService:
             
         except Exception as e:
             logger.error(f"Social media content generation failed: {str(e)}")
+            return {"error": f"Error: {str(e)}"}
+    
+    @staticmethod
+    def generate_social_media_content_from_image(
+        image_file_path: str,
+        caption_length: str = 'medium',
+        description_length: str = 'medium',
+        hashtag_count: int = 15
+    ) -> dict:
+        """
+        Generate social media content (caption, description, hashtags) from an image
+        Uses OpenAI Vision API to analyze the image and create engaging content
+        
+        Args:
+            image_file_path: Path to image file (jpg, png, webp, etc.)
+            caption_length: 'short' (1 sentence), 'medium' (2 sentences), 'long' (3 sentences)
+            description_length: 'short' (1 paragraph), 'medium' (2-3 paragraphs), 'long' (4-5 paragraphs)
+            hashtag_count: Number of hashtags to generate (5-30, default: 15)
+            
+        Returns:
+            Dict with caption, description, hashtags for Instagram, Facebook, YouTube
+        """
+        try:
+            if not os.path.exists(image_file_path):
+                return {"error": f"Error: File not found - {image_file_path}"}
+            
+            # Check if file is an image
+            valid_extensions = ('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp')
+            if not image_file_path.lower().endswith(valid_extensions):
+                return {"error": f"Error: Invalid image format. Supported formats: {', '.join(valid_extensions)}"}
+            
+            # Read and encode image to base64
+            with open(image_file_path, 'rb') as image_file:
+                image_data = base64.b64encode(image_file.read()).decode('utf-8')
+            
+            # Determine image MIME type
+            ext = os.path.splitext(image_file_path)[1].lower()
+            mime_types = {
+                '.jpg': 'image/jpeg',
+                '.jpeg': 'image/jpeg',
+                '.png': 'image/png',
+                '.gif': 'image/gif',
+                '.webp': 'image/webp'
+            }
+            mime_type = mime_types.get(ext, 'image/jpeg')
+            
+            # Initialize OpenAI client
+            client = OpenAI()
+            
+            # Define caption length requirements
+            caption_requirements = {
+                'short': '1 sentence (concise and punchy)',
+                'medium': '2 sentences (engaging with hook)',
+                'long': '3 sentences (detailed with strong hook)'
+            }
+            
+            # Define description length requirements
+            description_requirements = {
+                'short': '1 paragraph (brief overview)',
+                'medium': '2-3 paragraphs (detailed explanation)',
+                'long': '4-5 paragraphs (comprehensive and detailed)'
+            }
+            
+            caption_req = caption_requirements.get(caption_length, caption_requirements['medium'])
+            description_req = description_requirements.get(description_length, description_requirements['medium'])
+            
+            # Validate and set hashtag count
+            hashtag_count = max(5, min(30, hashtag_count))  # Ensure between 5 and 30
+            
+            # Create prompt for social media content generation
+            prompt = f"""Analyze this image and generate engaging social media content for Instagram, Facebook, and YouTube.
+
+                Please provide:
+                1. A hook-style caption ({caption_req}, written like a hook that grabs attention and creates curiosity. Use attention-grabbing phrases, emojis, and make people want to see more)
+                2. A detailed description ({description_req} explaining what's in the image and why it's interesting or valuable)
+                3. Exactly {hashtag_count} trending hashtags relevant to the image content
+
+                Format the response as:
+
+                CAPTION:
+                [Your hook-style attention-grabbing caption here with emojis]
+
+                DESCRIPTION:
+                [Your detailed description here]
+
+                HASHTAGS:
+                [Your hashtags separated by spaces, like: #trending #photography #art]
+            """
+            
+            # Call OpenAI Vision API for content generation
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a social media expert who creates engaging captions, descriptions, and trending hashtags for image content. Analyze images carefully and create content that is suitable for Instagram, Facebook, and YouTube. Make captions attention-grabbing with emojis."
+                    },
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": prompt
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:{mime_type};base64,{image_data}"
+                                }
+                            }
+                        ]
+                    }
+                ],
+                temperature=0.7,
+                max_tokens=1000
+            )
+            
+            # Parse the response
+            content = response.choices[0].message.content
+            
+            # Extract caption, description, and hashtags
+            caption = ""
+            description = ""
+            hashtags = ""
+            
+            if "CAPTION:" in content:
+                caption_part = content.split("CAPTION:")[1].split("DESCRIPTION:")[0].strip()
+                caption = caption_part
+            
+            if "DESCRIPTION:" in content:
+                desc_part = content.split("DESCRIPTION:")[1].split("HASHTAGS:")[0].strip()
+                description = desc_part
+            
+            if "HASHTAGS:" in content:
+                hashtags_part = content.split("HASHTAGS:")[1].strip()
+                hashtags = hashtags_part
+            
+            result = {
+                "image_analysis": "Image analyzed successfully",
+                "caption": caption,
+                "description": description,
+                "hashtags": hashtags,
+                "instagram": {
+                    "caption": f"{caption}\n\n{hashtags}",
+                    "description": description
+                },
+                "facebook": {
+                    "caption": caption,
+                    "description": f"{description}\n\n{hashtags}"
+                },
+                "youtube": {
+                    "title": caption,
+                    "description": f"{description}\n\n{hashtags}",
+                    "tags": [tag.strip().replace('#', '') for tag in hashtags.split() if tag.startswith('#')]
+                }
+            }
+            
+            logger.info(f"Social media content generated from image: {image_file_path}")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Image content generation failed: {str(e)}")
             return {"error": f"Error: {str(e)}"}

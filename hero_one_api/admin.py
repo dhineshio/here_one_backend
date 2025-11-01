@@ -2,8 +2,8 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
-from datetime import timedelta
-from .models import User, OTPVerification, Client
+from datetime import timedelta, date
+from .models import User, OTPVerification, Client, CreditUsage
 
 # Register your models here.
 class HeroOneAdmin(admin.AdminSite):
@@ -20,10 +20,20 @@ class HeroOneAdmin(admin.AdminSite):
         verified_users = User.objects.filter(is_verified=True).count()
         unverified_users = User.objects.filter(is_verified=False).count()
         
+        # Subscription statistics
+        free_users = User.objects.filter(subscription_type='free').count()
+        premium_monthly_users = User.objects.filter(subscription_type='premium_monthly').count()
+        premium_yearly_users = User.objects.filter(subscription_type='premium_yearly').count()
+        
         # OTP statistics
         total_otps = OTPVerification.objects.count()
         active_otps = OTPVerification.objects.filter(is_active=True, is_used=False).count()
         expired_otps = OTPVerification.objects.filter(expires_at__lt=timezone.now()).count()
+        
+        # Credit statistics
+        today = date.today()
+        credits_used_today = CreditUsage.objects.filter(used_at__date=today).count()
+        total_credits_used = CreditUsage.objects.count()
         
         # Recent registrations (last 24 hours)
         yesterday = timezone.now() - timedelta(days=1)
@@ -41,11 +51,14 @@ class HeroOneAdmin(admin.AdminSite):
                 'verified_users': verified_users,
                 'unverified_users': unverified_users,
                 'verification_rate': round((verified_users / total_users * 100) if total_users > 0 else 0, 1),
-                'freelancers': freelancers,
-                'startups': startups,
+                'free_users': free_users,
+                'premium_monthly_users': premium_monthly_users,
+                'premium_yearly_users': premium_yearly_users,
                 'total_otps': total_otps,
                 'active_otps': active_otps,
                 'expired_otps': expired_otps,
+                'credits_used_today': credits_used_today,
+                'total_credits_used': total_credits_used,
                 'recent_registrations': recent_registrations,
                 'old_unverified': old_unverified,
             }
@@ -66,6 +79,9 @@ class UserAdmin(BaseUserAdmin):
         'username', 
         'full_name', 
         'phone_number',
+        'subscription_type',
+        'subscription_status_display',
+        'credits_remaining_display',
         'oauth_provider',
         'is_verified',
         'verification_status_display',
@@ -77,6 +93,7 @@ class UserAdmin(BaseUserAdmin):
     
     # Fields to filter by
     list_filter = (
+        'subscription_type',
         'is_verified',
         'oauth_provider',
         'is_staff', 
@@ -92,7 +109,7 @@ class UserAdmin(BaseUserAdmin):
     ordering = ('email',)
     
     # Fields that should be read-only
-    readonly_fields = ('date_joined', 'last_login', 'username')
+    readonly_fields = ('date_joined', 'last_login', 'username', 'subscription_start_date', 'subscription_end_date')
     
     # Fieldsets for the user detail/edit page
     fieldsets = (
@@ -114,6 +131,13 @@ class UserAdmin(BaseUserAdmin):
                 'oauth_access_token'
             ),
             'classes': ('collapse',),  # Make it collapsible
+        }),
+        (_('Subscription & Credits'), {
+            'fields': (
+                'subscription_type',
+                'subscription_start_date',
+                'subscription_end_date'
+            ),
         }),
         (_('Verification & Permissions'), {
             'fields': (
@@ -182,12 +206,34 @@ class UserAdmin(BaseUserAdmin):
         return "—"
     pending_otps_count.short_description = 'Pending OTPs'
     
+    def subscription_status_display(self, obj):
+        """Display subscription status with expiry info"""
+        if obj.is_premium():
+            if obj.subscription_end_date:
+                days_left = (obj.subscription_end_date - timezone.now()).days
+                return f"✅ Active ({days_left} days left)"
+            return "✅ Active (Lifetime)"
+        return "⚪ Free"
+    subscription_status_display.short_description = 'Subscription Status'
+    subscription_status_display.admin_order_field = 'subscription_type'
+    
+    def credits_remaining_display(self, obj):
+        """Display remaining credits for today"""
+        if obj.is_premium():
+            return "∞ Unlimited"
+        remaining = obj.get_remaining_credits()
+        used = obj.get_credits_used_today()
+        limit = obj.get_daily_credit_limit()
+        return f"{remaining}/{limit} (used: {used})"
+    credits_remaining_display.short_description = 'Credits Today'
+    
     def get_queryset(self, request):
         """Optimize queryset with prefetch_related for OTPs"""
         return super().get_queryset(request).prefetch_related('otp_verifications')
     
     # Admin Actions
-    actions = ['mark_as_verified', 'mark_as_unverified', 'cleanup_user_otps', 'delete_unverified_users']
+    actions = ['mark_as_verified', 'mark_as_unverified', 'cleanup_user_otps', 'delete_unverified_users', 
+               'upgrade_to_premium_monthly', 'upgrade_to_premium_yearly', 'downgrade_to_free']
     
     def mark_as_verified(self, request, queryset):
         """Mark selected users as verified"""
@@ -225,6 +271,27 @@ class UserAdmin(BaseUserAdmin):
         else:
             self.message_user(request, 'No unverified users found in selection.')
     delete_unverified_users.short_description = "Delete unverified users (and their OTPs)"
+    
+    def upgrade_to_premium_monthly(self, request, queryset):
+        """Upgrade selected users to premium monthly"""
+        for user in queryset:
+            user.upgrade_to_premium('premium_monthly')
+        self.message_user(request, f'{queryset.count()} user(s) upgraded to Premium Monthly.')
+    upgrade_to_premium_monthly.short_description = "Upgrade to Premium Monthly (28 days)"
+    
+    def upgrade_to_premium_yearly(self, request, queryset):
+        """Upgrade selected users to premium yearly"""
+        for user in queryset:
+            user.upgrade_to_premium('premium_yearly')
+        self.message_user(request, f'{queryset.count()} user(s) upgraded to Premium Yearly.')
+    upgrade_to_premium_yearly.short_description = "Upgrade to Premium Yearly (365 days)"
+    
+    def downgrade_to_free(self, request, queryset):
+        """Downgrade selected users to free plan"""
+        for user in queryset:
+            user.downgrade_to_free()
+        self.message_user(request, f'{queryset.count()} user(s) downgraded to Free plan.')
+    downgrade_to_free.short_description = "Downgrade to Free plan"
     
     def save_model(self, request, obj, form, change):
         """
@@ -404,4 +471,108 @@ class ClientAdmin(admin.ModelAdmin):
 @admin.register(Client)
 class DefaultClientAdmin(ClientAdmin):
     """Default admin registration for Client"""
+    pass
+
+
+@admin.register(CreditUsage, site=admin_site)
+class CreditUsageAdmin(admin.ModelAdmin):
+    """Admin interface for Credit Usage tracking"""
+    
+    # Fields to display in the list
+    list_display = (
+        'id',
+        'user_email',
+        'user_subscription',
+        'action_type',
+        'description_preview',
+        'used_at',
+        'formatted_date'
+    )
+    
+    # Fields to filter by
+    list_filter = (
+        'action_type',
+        'used_at',
+        'user__subscription_type'
+    )
+    
+    # Fields to search by
+    search_fields = (
+        'user__email',
+        'user__full_name',
+        'action_type',
+        'description'
+    )
+    
+    # Default ordering (newest first)
+    ordering = ('-used_at',)
+    
+    # Read-only fields (all fields are read-only for audit purposes)
+    readonly_fields = ('id', 'user', 'action_type', 'description', 'used_at')
+    
+    # Fieldsets for the detail page
+    fieldsets = (
+        (_('Credit Usage Information'), {
+            'fields': (
+                'id',
+                'user',
+                'action_type',
+                'description',
+                'used_at'
+            )
+        }),
+    )
+    
+    def user_email(self, obj):
+        """Display user email"""
+        return obj.user.email
+    user_email.short_description = 'User Email'
+    user_email.admin_order_field = 'user__email'
+    
+    def user_subscription(self, obj):
+        """Display user subscription type"""
+        if obj.user.is_premium():
+            return f"💎 {obj.user.get_subscription_type_display()}"
+        return "⚪ Free"
+    user_subscription.short_description = 'Subscription'
+    user_subscription.admin_order_field = 'user__subscription_type'
+    
+    def description_preview(self, obj):
+        """Display preview of description"""
+        if obj.description:
+            return obj.description[:50] + '...' if len(obj.description) > 50 else obj.description
+        return "—"
+    description_preview.short_description = 'Description'
+    
+    def formatted_date(self, obj):
+        """Display formatted date"""
+        return obj.used_at.strftime('%Y-%m-%d %H:%M')
+    formatted_date.short_description = 'Date/Time'
+    formatted_date.admin_order_field = 'used_at'
+    
+    def get_queryset(self, request):
+        """Optimize queryset with select_related"""
+        return super().get_queryset(request).select_related('user')
+    
+    def has_add_permission(self, request):
+        """Disable manual adding of credit usage (should be automatic)"""
+        return False
+    
+    def has_change_permission(self, request, obj=None):
+        """Disable editing of credit usage (audit trail)"""
+        return False
+    
+    # Admin Actions
+    actions = ['export_credit_usage']
+    
+    def export_credit_usage(self, request, queryset):
+        """Export selected credit usage data (placeholder for future implementation)"""
+        count = queryset.count()
+        self.message_user(request, f'Export functionality will export {count} credit usage record(s).')
+    export_credit_usage.short_description = "Export credit usage data"
+
+
+@admin.register(CreditUsage)
+class DefaultCreditUsageAdmin(CreditUsageAdmin):
+    """Default admin registration for CreditUsage"""
     pass

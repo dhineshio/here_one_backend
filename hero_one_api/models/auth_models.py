@@ -3,6 +3,7 @@ from django.core.validators import EmailValidator
 from django.db import models
 from django.contrib.auth.base_user import BaseUserManager
 from django.utils import timezone
+from datetime import timedelta, date
 import random
 import string
 
@@ -70,6 +71,12 @@ class User(AbstractBaseUser, PermissionsMixin):
     Custom User model with email as the primary authentication field
     """
     
+    SUBSCRIPTION_CHOICES = [
+        ('free', 'Free'),
+        ('premium_monthly', 'Premium Monthly'),
+        ('premium_yearly', 'Premium Yearly'),
+    ]
+    
     # Basic Information
     full_name = models.CharField(max_length=60, blank=False)
     email = models.EmailField(
@@ -117,6 +124,24 @@ class User(AbstractBaseUser, PermissionsMixin):
         help_text='OAuth access token (encrypted in production)'
     )
     
+    # Subscription & Credits
+    subscription_type = models.CharField(
+        max_length=20,
+        choices=SUBSCRIPTION_CHOICES,
+        default='free',
+        help_text='User subscription plan'
+    )
+    subscription_start_date = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text='When the current subscription started'
+    )
+    subscription_end_date = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text='When the subscription expires (for premium users)'
+    )
+    
     # Django required fields
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
@@ -158,7 +183,143 @@ class User(AbstractBaseUser, PermissionsMixin):
             
             self.username = username
         
+        # Set subscription_start_date if it's a new user
+        if not self.pk and not self.subscription_start_date:
+            self.subscription_start_date = timezone.now()
+        
+        # Automatically set subscription_end_date when subscription_type changes
+        if self.pk:  # Only for existing users (not new users)
+            try:
+                old_user = User.objects.get(pk=self.pk)
+                # Check if subscription type has changed
+                if old_user.subscription_type != self.subscription_type:
+                    if self.subscription_type == 'premium_monthly':
+                        self.subscription_start_date = timezone.now()
+                        self.subscription_end_date = timezone.now() + timedelta(days=28)
+                    elif self.subscription_type == 'premium_yearly':
+                        self.subscription_start_date = timezone.now()
+                        self.subscription_end_date = timezone.now() + timedelta(days=365)
+                    elif self.subscription_type == 'free':
+                        # When downgrading to free, clear the end date
+                        self.subscription_end_date = None
+            except User.DoesNotExist:
+                pass
+        else:
+            # For new users, set expiration date based on initial subscription type
+            if self.subscription_type == 'premium_monthly':
+                self.subscription_end_date = timezone.now() + timedelta(days=28)
+            elif self.subscription_type == 'premium_yearly':
+                self.subscription_end_date = timezone.now() + timedelta(days=365)
+        
         super().save(*args, **kwargs)
+    
+    def is_premium(self):
+        """Check if user has an active premium subscription"""
+        if self.subscription_type in ['premium_monthly', 'premium_yearly']:
+            # Check if subscription is still valid
+            if self.subscription_end_date:
+                is_valid = timezone.now() < self.subscription_end_date
+                
+                # Auto-expire if subscription has ended
+                if not is_valid:
+                    self.auto_expire_subscription()
+                    return False
+                
+                return True
+            # If no end date, assume it's active (lifetime premium)
+            return True
+        return False
+    
+    def auto_expire_subscription(self):
+        """Automatically expire the subscription and downgrade to free"""
+        self.subscription_type = 'free'
+        # Keep the end date for historical records
+        self.save(update_fields=['subscription_type'])
+    
+    def get_daily_credit_limit(self):
+        """Get the daily credit limit based on subscription type"""
+        if self.is_premium():
+            return None  # Unlimited for premium users
+        return 3  # Free users get 3 credits per day
+    
+    def get_credits_used_today(self):
+        """Get the number of credits used today"""
+        today = date.today()
+        return CreditUsage.objects.filter(
+            user=self,
+            used_at__date=today
+        ).count()
+    
+    def get_remaining_credits(self):
+        """Get remaining credits for today"""
+        if self.is_premium():
+            return None  # Unlimited
+        
+        limit = self.get_daily_credit_limit()
+        used = self.get_credits_used_today()
+        return max(0, limit - used)
+    
+    def can_use_credit(self):
+        """Check if user can use a credit"""
+        if self.is_premium():
+            return True  # Premium users have unlimited credits
+        
+        remaining = self.get_remaining_credits()
+        return remaining > 0
+    
+    def use_credit(self, action_type='general', description=''):
+        """
+        Consume one credit for an action
+        
+        Args:
+            action_type: Type of action (e.g., 'transcription', 'audio_conversion')
+            description: Optional description of the action
+        
+        Returns:
+            Tuple[bool, str]: (Success status, message)
+        """
+        if not self.can_use_credit():
+            return False, "Daily credit limit reached. Please upgrade to premium for unlimited access."
+        
+        # Create credit usage record
+        CreditUsage.objects.create(
+            user=self,
+            action_type=action_type,
+            description=description
+        )
+        
+        if self.is_premium():
+            return True, "Credit used (unlimited available)"
+        else:
+            remaining = self.get_remaining_credits()
+            return True, f"Credit used. {remaining} credits remaining today."
+    
+    def upgrade_to_premium(self, subscription_type='premium_monthly'):
+        """
+        Upgrade user to premium subscription
+        
+        Args:
+            subscription_type: Type of premium subscription ('premium_monthly' or 'premium_yearly')
+        """
+        if subscription_type not in ['premium_monthly', 'premium_yearly']:
+            raise ValueError("Invalid subscription type. Must be 'premium_monthly' or 'premium_yearly'")
+        
+        self.subscription_type = subscription_type
+        self.subscription_start_date = timezone.now()
+        
+        # Set expiration based on subscription type
+        if subscription_type == 'premium_monthly':
+            self.subscription_end_date = timezone.now() + timedelta(days=28)
+        elif subscription_type == 'premium_yearly':
+            self.subscription_end_date = timezone.now() + timedelta(days=365)
+        
+        self.save(update_fields=['subscription_type', 'subscription_start_date', 'subscription_end_date'])
+    
+    def downgrade_to_free(self):
+        """Downgrade user to free subscription"""
+        self.subscription_type = 'free'
+        self.subscription_end_date = None
+        self.save(update_fields=['subscription_type', 'subscription_end_date'])
 
 
 class OTPVerification(models.Model):
@@ -270,3 +431,49 @@ class OTPVerification(models.Model):
                 
         except cls.DoesNotExist:
             return False, "Invalid OTP code"
+
+
+class CreditUsage(models.Model):
+    """
+    Model to track credit usage for users
+    """
+    ACTION_TYPE_CHOICES = [
+        ('transcription', 'Transcription'),
+        ('audio_conversion', 'Audio Conversion'),
+        ('video_processing', 'Video Processing'),
+        ('general', 'General'),
+    ]
+    
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='credit_usage',
+        help_text='User who used the credit'
+    )
+    action_type = models.CharField(
+        max_length=50,
+        choices=ACTION_TYPE_CHOICES,
+        default='general',
+        help_text='Type of action that consumed the credit'
+    )
+    description = models.TextField(
+        blank=True,
+        null=True,
+        help_text='Optional description of the action'
+    )
+    used_at = models.DateTimeField(
+        auto_now_add=True,
+        help_text='When the credit was used'
+    )
+    
+    class Meta:
+        verbose_name = 'Credit Usage'
+        verbose_name_plural = 'Credit Usages'
+        ordering = ['-used_at']
+        indexes = [
+            models.Index(fields=['user', '-used_at']),
+            models.Index(fields=['user', 'action_type']),
+        ]
+    
+    def __str__(self):
+        return f"{self.user.email} - {self.action_type} - {self.used_at.strftime('%Y-%m-%d %H:%M')}"

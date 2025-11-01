@@ -26,8 +26,8 @@ api = NinjaAPI(title="Hero One API", version="1.0.0")
 
 # Import and add routers
 from hero_one_api.views.client_views import client_router
-from hero_one_api.views.audio_views import audio_api
-from hero_one_api.views.transcribe_views import transcribe_api
+# from hero_one_api.views.audio_views import audio_api
+# from hero_one_api.views.transcribe_views import transcribe_api
 
 api.add_router("/clients", client_router)
 
@@ -35,8 +35,8 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/auth/', auth_api.urls),
     path('api/', api.urls),
-    path('api/audio/', audio_api.urls),
-    path('api/transcribe/', transcribe_api.urls),
+    # path('api/audio/', audio_api.urls),
+    # path('api/transcribe/', transcribe_api.urls),
 ]
 
 
