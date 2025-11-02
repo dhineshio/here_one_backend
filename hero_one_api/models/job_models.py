@@ -68,6 +68,10 @@ class Job(models.Model):
         default='pending',
         help_text='Current status of the job'
     )
+    progress = models.IntegerField(
+        default=0,
+        help_text='Processing progress (0-100)'
+    )
     
     # For video files - converted audio path
     converted_audio_path = models.CharField(
@@ -138,14 +142,21 @@ class Job(models.Model):
         """Mark job as started"""
         self.status = 'processing'
         self.started_at = timezone.now()
-        self.save(update_fields=['status', 'started_at'])
+        self.progress = 0
+        self.save(update_fields=['status', 'started_at', 'progress'])
+    
+    def update_progress(self, progress: int):
+        """Update job progress (0-100)"""
+        self.progress = max(0, min(100, progress))
+        self.save(update_fields=['progress'])
     
     def mark_completed(self, result_data):
         """Mark job as completed with results"""
         self.status = 'completed'
         self.result_data = result_data
         self.completed_at = timezone.now()
-        self.save(update_fields=['status', 'result_data', 'completed_at'])
+        self.progress = 100
+        self.save(update_fields=['status', 'result_data', 'completed_at', 'progress'])
     
     def mark_failed(self, error_message):
         """Mark job as failed with error message"""

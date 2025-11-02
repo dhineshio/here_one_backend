@@ -219,6 +219,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:3000",
     "http://localhost:3001",  # Alternative Next.js port
     "http://127.0.0.1:3001",
+    "http://127.0.0.1:5500"
 ]
 
 # Allow credentials (cookies, authorization headers)
@@ -260,6 +261,16 @@ EMAIL_HOST_USER = 'creatorscribe@gmail.com'
 EMAIL_HOST_PASSWORD = 'ocnd izrm rdfh duva'
 DEFAULT_FROM_EMAIL = 'CreatorScribe <creatorscribe@gmail.com>'
 EMAIL_TIMEOUT = 10
+
+# Celery Configuration
+CELERY_BROKER_URL = 'redis://localhost:6379/0'
+CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes
 
 # Logging Configuration
 LOGGING = {

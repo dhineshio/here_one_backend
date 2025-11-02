@@ -17,6 +17,7 @@ from hero_one_api.models import Job, Client
 from hero_one_api.services.transcribe_service import TranscribeService
 from hero_one_api.services.audio_service import AudioService
 from hero_one_api.schemas import ErrorResponseSchema
+from hero_one_api.tasks import process_content_generation_task
 
 logger = logging.getLogger(__name__)
 
@@ -168,87 +169,20 @@ def upload_and_generate_content(
         
         logger.info(f"Job created: {job.job_id} for user {user.email}")
         
-        # Process the file based on type
-        try:
-            job.start_processing()
-            
-            if file_type == 'image':
-                # Process image directly
-                result = TranscribeService.generate_social_media_content_from_image(
-                    image_file_path=file_path,
-                    caption_length=caption_length,
-                    description_length=description_length,
-                    hashtag_count=hashtag_count
-                )
-                
-                if "error" in result:
-                    job.mark_failed(result["error"])
-                    return 400, {"success": False, "message": result["error"]}
-                
-                job.mark_completed(result)
-                
-            elif file_type == 'video':
-                # Convert video to audio first
-                logger.info(f"Converting video to audio: {file_path}")
-                success, audio_path_or_error = AudioService.video_to_audio(file_path)
-                
-                if not success:
-                    job.mark_failed(f"Video to audio conversion failed: {audio_path_or_error} {job.job_id}")
-                    return 400, {"success": False, "message": audio_path_or_error}
-                
-                # Save converted audio path
-                job.converted_audio_path = audio_path_or_error
-                job.save(update_fields=['converted_audio_path'])
-                
-                logger.info(f"Video converted to audio: {audio_path_or_error}")
-                
-                # Generate content from audio
-                result = TranscribeService.generate_social_media_content(
-                    audio_file_path=audio_path_or_error,
-                    caption_length=caption_length,
-                    description_length=description_length,
-                    hashtag_count=hashtag_count
-                )
-                
-                if "error" in result:
-                    job.mark_failed(result["error"])
-                    return 400, {"success": False, "message": result["error"]}
-                
-                job.mark_completed(result)
-                
-            elif file_type == 'audio':
-                # Process audio directly
-                result = TranscribeService.generate_social_media_content(
-                    audio_file_path=file_path,
-                    caption_length=caption_length,
-                    description_length=description_length,
-                    hashtag_count=hashtag_count
-                )
-                
-                if "error" in result:
-                    job.mark_failed(result["error"])
-                    return 400, {"success": False, "message": result["error"]}
-                
-                job.mark_completed(result)
-            
-            logger.info(f"Job completed: {job.job_id}")
-            
-            return 200, {
-                "message": "Content generated successfully",
-                "job_id": str(job.job_id),
-                "client_id": client.id,
-                "client_name": client.client_name,
-                "file_type": file_type,
-                "status": "completed",
-                "result": result,
-                "credits_used": message
-            }
-            
-        except Exception as e:
-            error_msg = f"Processing failed: {str(e)}"
-            logger.error(f"Job {job.job_id} failed: {error_msg}")
-            job.mark_failed(error_msg)
-            return 400, {"success": False, "message": error_msg, "job_id": str(job.job_id)}
+        # Queue the task for background processing
+        task = process_content_generation_task.delay(str(job.job_id))
+        logger.info(f"Background task queued for job {job.job_id}, task_id: {task.id}")
+        
+        return 200, {
+            "message": "File uploaded successfully. Processing in background.",
+            "job_id": str(job.job_id),
+            "task_id": task.id,
+            "client_id": client.id,
+            "client_name": client.client_name,
+            "file_type": file_type,
+            "status": "pending",
+            "credits_used": message,
+        }
     
     except Exception as e:
         logger.error(f"Upload failed: {str(e)}")
@@ -284,6 +218,7 @@ def get_job_status(request, job_id: str):
             "file_type": job.file_type,
             "original_filename": job.original_filename,
             "status": job.status,
+            "progress": job.progress,
             "created_at": job.created_at.isoformat(),
             "started_at": job.started_at.isoformat() if job.started_at else None,
             "completed_at": job.completed_at.isoformat() if job.completed_at else None,
@@ -346,6 +281,7 @@ def list_user_jobs(request, limit: int = Query(10), offset: int = Query(0), clie
                 "file_type": job.file_type,
                 "original_filename": job.original_filename,
                 "status": job.status,
+                "progress": job.progress,
                 "created_at": job.created_at.isoformat(),
                 "completed_at": job.completed_at.isoformat() if job.completed_at else None,
                 "processing_time": job.get_duration_display(),
