@@ -79,8 +79,15 @@ def test_background_processing():
     # Determine file type
     file_type = 'audio' if available_file.endswith('.mp3') else 'image'
     
-    # Create a test job
-    print("📝 Creating test job...")
+    print("=" * 60)
+    print("Testing Two-Step Process:")
+    print("  Step 1: Create job (uploaded status)")
+    print("  Step 2: Queue task for processing")
+    print("=" * 60)
+    print()
+    
+    # Step 1: Create a test job in 'uploaded' state
+    print("📝 Step 1: Creating test job (uploaded state)...")
     job = Job.objects.create(
         client=client,
         user=user,
@@ -90,10 +97,24 @@ def test_background_processing():
         caption_length='medium',
         description_length='medium',
         hashtag_count=15,
-        status='pending'
+        status='uploaded'  # New two-step process: start as 'uploaded'
     )
     
     print(f"✅ Job created: {job.job_id}")
+    print(f"   Status: {job.status} (file uploaded, ready for processing)")
+    print()
+    
+    print("User can now configure settings in UI...")
+    print()
+    
+    # Step 2: Update config and queue the task
+    print("📝 Step 2: Starting content generation...")
+    job.caption_length = 'long'
+    job.description_length = 'medium'
+    job.hashtag_count = 20
+    job.status = 'pending'
+    job.save(update_fields=['caption_length', 'description_length', 'hashtag_count', 'status'])
+    print(f"   Updated configuration: caption=long, description=medium, hashtags=20")
     print()
     
     # Queue the task

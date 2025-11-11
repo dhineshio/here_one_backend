@@ -590,6 +590,7 @@ class JobAdmin(admin.ModelAdmin):
         'file_type',
         'original_filename',
         'status_display',
+        'progress_display',
         'created_at',
         'processing_time_display',
         'has_results'
@@ -626,6 +627,7 @@ class JobAdmin(admin.ModelAdmin):
         'file_path',
         'converted_audio_path',
         'status',
+        'progress',
         'result_data',
         'error_message',
         'created_at',
@@ -643,6 +645,7 @@ class JobAdmin(admin.ModelAdmin):
                 'client',
                 'user',
                 'status',
+                'progress',
                 'file_type',
                 'original_filename'
             )
@@ -699,6 +702,7 @@ class JobAdmin(admin.ModelAdmin):
     def status_display(self, obj):
         """Display status with color coding"""
         status_icons = {
+            'uploaded': '📤',
             'pending': '⏳',
             'processing': '⚙️',
             'completed': '✅',
@@ -708,6 +712,18 @@ class JobAdmin(admin.ModelAdmin):
         return f"{icon} {obj.get_status_display()}"
     status_display.short_description = 'Status'
     status_display.admin_order_field = 'status'
+    
+    def progress_display(self, obj):
+        """Display progress percentage"""
+        if obj.status == 'uploaded':
+            return "—"
+        elif obj.status in ['pending', 'processing']:
+            return f"{obj.progress}%"
+        elif obj.status == 'completed':
+            return "100%"
+        return "—"
+    progress_display.short_description = 'Progress'
+    progress_display.admin_order_field = 'progress'
     
     def processing_time_display(self, obj):
         """Display processing time"""

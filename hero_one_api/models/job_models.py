@@ -14,6 +14,7 @@ class Job(models.Model):
     """
     
     STATUS_CHOICES = [
+        ('uploaded', 'Uploaded'),  # File uploaded, not processing yet
         ('pending', 'Pending'),
         ('processing', 'Processing'),
         ('completed', 'Completed'),
