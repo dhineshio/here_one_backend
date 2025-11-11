@@ -253,7 +253,7 @@ CORS_ALLOWED_METHODS = [
 
 # Email Configuration
 # Gmail SMTP Configuration
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_BACKEND = 'hero_one_api.backends.SSLEmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
@@ -261,6 +261,13 @@ EMAIL_HOST_USER = 'creatorscribe@gmail.com'
 EMAIL_HOST_PASSWORD = 'ocnd izrm rdfh duva'
 DEFAULT_FROM_EMAIL = 'CreatorScribe <creatorscribe@gmail.com>'
 EMAIL_TIMEOUT = 10
+
+# SSL Configuration for email
+import ssl
+EMAIL_SSL_CERTFILE = None
+EMAIL_SSL_KEYFILE = None
+EMAIL_USE_SSL = False
+EMAIL_USE_TLS = True
 
 # Celery Configuration
 CELERY_BROKER_URL = 'redis://localhost:6379/0'

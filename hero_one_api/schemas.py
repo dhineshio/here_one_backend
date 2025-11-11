@@ -81,6 +81,26 @@ class OAuthSigninResponseSchema(Schema):
     refresh_token: str
 
 # Client Schemas
+class ClientCreateRequestSchema(Schema):
+    client_name: str
+    contact_person: str
+    contact_email: str
+    contact_phone: Optional[str] = None
+    industry_type: str = "other"
+    brand_logo: Optional[str] = None  # Base64 encoded image or file path
+    facebook_url: Optional[str] = None
+    instagram_url: Optional[str] = None
+    youtube_url: Optional[str] = None
+    linkedin_url: Optional[str] = None
+    twitter_url: Optional[str] = None
+    tiktok_url: Optional[str] = None
+    preferred_post_time: Optional[str] = None  # Format: "HH:MM"
+
+class ClientCreateResponseSchema(Schema):
+    success: bool
+    message: str
+    data: "ClientResponseSchema"
+
 class ClientResponseSchema(Schema):
     id: int
     client_name: str
